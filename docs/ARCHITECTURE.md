@@ -24,7 +24,7 @@ Do not share bearer tokens, forward the port, or log request headers.
 | Endpoint | Request / response |
 | --- | --- |
 | `GET /v1/windows` | Array of `{handle,processId,title,bounds,executablePath,processName}`. Access-denied process metadata is null. |
-| `POST /v1/windows/{handle}/activate` | No body. Restores if minimized, requests foreground via Win32, and returns `{handle,isForeground:true}` **only** after `GetForegroundWindow` confirms this handle. If a normal background `SetForegroundWindow` is denied, it temporarily joins same-desktop input queues with `AttachThreadInput`, retries, then immediately detaches. If a packaged/UWP-style window still rejects Win32 activation, UIA top-level `SetFocus` is attempted as a compatibility fallback; the foreground handle is still the sole success authority. |
+| `POST /v1/windows/{handle}/activate` | No body. Restores if minimized, first attempts ordinary Win32 foreground activation, and returns `{handle,isForeground:true}` **only** after `GetForegroundWindow` confirms this handle. If that ordinary attempt is denied, it temporarily joins same-desktop input queues with `AttachThreadInput`, retries, then immediately detaches. If a packaged/UWP-style window still rejects Win32 activation, UIA top-level `SetFocus` is attempted as a final compatibility fallback; the foreground handle is still the sole success authority. |
 | `GET /v1/windows/{handle}/tree?depth=3&maxNodes=200` | `{handle,root,nodeCount,truncated}`. Root path `[]`; children use zero-based path segments. `depth` 0–10, `maxNodes` 1–1000. |
 | `GET /v1/windows/{handle}/screenshot` | `image/png` + `X-WCU-Target`, `X-WCU-Width`, `X-WCU-Height` headers. |
 | `GET /v1/desktop/screenshot` | Same PNG and metadata headers for entire virtual desktop. |
@@ -47,8 +47,9 @@ may be an ancestor. Examples: `{"automationId":"num7Button"}` and
 {"name":"WCU Semantic Validation","controlType":"Window"}}`. No selector
 language, fuzzy matching or hidden element cache. Each inspect/focus/invoke/
 set-value call resolves against the current UIA tree, scans at most 2000 nodes
-to depth 20 per search (shared node budget for scoped searches), and refuses to
-claim uniqueness if a limit is reached. Locators can themselves become stale
+through depth 20 inclusive per search (shared node budget for scoped searches),
+and refuses to claim uniqueness only when nodes beyond that boundary exist or
+another search budget is exceeded. Locators can themselves become stale
 when UI labels/IDs change; client should re-observe or use more stable fields.
 Unavailable provider data aborts semantic lookup rather than returning a false
 no-match or a false unique match.
@@ -123,9 +124,9 @@ open Calculator in Standard mode (this test clears its display and enters 7),
 and run from this repository:
 
 ```powershell
-.\scripts\semantic-acceptance.ps1 -ExpectedVersion '0.2.3'  # replace with actual new version
+.\scripts\semantic-acceptance.ps1 -ExpectedVersion '0.2.4'  # replace with actual new version
 # For localized Calculator titles, supply its handle from `wcu windows`:
-.\scripts\semantic-acceptance.ps1 -ExpectedVersion '0.2.3' -CalculatorHandle 0x123456
+.\scripts\semantic-acceptance.ps1 -ExpectedVersion '0.2.4' -CalculatorHandle 0x123456
 ```
 
 The script uses the per-user token (never prints it), creates and removes a

@@ -67,6 +67,36 @@ public class SemanticLocatorTests
     }
 
     [Fact]
+    public void LeafExactlyAtDepthLimitDoesNotMakeCompleteSearchFail()
+    {
+        var root = new Node("target");
+        var cursor = root;
+        for (var i = 0; i < InputLimits.MaxLocatorDepth; i++)
+        {
+            var child = new Node();
+            cursor.Children.Add(child);
+            cursor = child;
+        }
+
+        Assert.Same(root, Resolve(root, ById("target")));
+    }
+
+    [Fact]
+    public void TargetLeafExactlyAtDepthLimitCanMatch()
+    {
+        var root = new Node();
+        var cursor = root;
+        for (var i = 0; i < InputLimits.MaxLocatorDepth; i++)
+        {
+            var child = new Node(i == InputLimits.MaxLocatorDepth - 1 ? "target" : null);
+            cursor.Children.Add(child);
+            cursor = child;
+        }
+
+        Assert.Same(cursor, Resolve(root, ById("target")));
+    }
+
+    [Fact]
     public void APartialSearchNeverReportsAUniqueMatch()
     {
         var root = new Node("target");

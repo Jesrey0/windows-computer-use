@@ -24,9 +24,14 @@ internal static class SemanticLocator
                         throw new AutomationException(prefix + "_ambiguous", "Locator matched multiple elements.", 409);
                     found = node;
                 }
+                var descendants = children(node);
                 if (depth == InputLimits.MaxLocatorDepth)
-                    throw new AutomationException("locator_limit_exceeded", "Locator depth limit reached.");
-                foreach (var child in children(node)) Visit(child, depth + 1, true);
+                {
+                    if (descendants.Count > 0)
+                        throw new AutomationException("locator_limit_exceeded", "Locator depth limit reached.");
+                    return;
+                }
+                foreach (var child in descendants) Visit(child, depth + 1, true);
             }
             Visit(start, 0, includeStart);
             return found ?? throw new AutomationException(prefix + "_not_found", "Locator matched no elements.", 404);

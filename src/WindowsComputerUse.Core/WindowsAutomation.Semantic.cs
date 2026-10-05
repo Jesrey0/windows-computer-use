@@ -10,8 +10,16 @@ public sealed partial class WindowsAutomation
         RequireWindow(handle);
         if (Native.IsIconic(handle)) Native.ShowWindow(handle, 9); // SW_RESTORE
 
-        if (Native.GetForegroundWindow() != handle)
+        void RequestForeground(bool attachInputThreads)
         {
+            if (!attachInputThreads)
+            {
+                Native.BringWindowToTop(handle);
+                Native.SetActiveWindow(handle);
+                Native.SetForegroundWindow(handle);
+                return;
+            }
+
             var targetThread = Native.GetWindowThreadProcessId(handle, out _);
             var currentThread = Native.GetCurrentThreadId();
             var foreground = Native.GetForegroundWindow();
@@ -21,10 +29,9 @@ public sealed partial class WindowsAutomation
 
             try
             {
-                // Windows normally prevents a background process from stealing foreground.
-                // Temporarily joining same-desktop input queues gives SetForegroundWindow the
-                // normal interactive relationship it expects. AttachThreadInput cannot cross
-                // desktops and does not bypass integrity/UIPI or UAC boundaries.
+                // Retry only after ordinary foreground activation was denied. Joining
+                // same-desktop input queues gives SetForegroundWindow the interactive
+                // relationship it expects without crossing desktop/UIPI/UAC boundaries.
                 if (targetThread != 0 && currentThread != 0 && currentThread != targetThread)
                     attachedCurrent = Native.AttachThreadInput(currentThread, targetThread, true);
                 if (targetThread != 0 && foregroundThread != 0 &&
@@ -43,6 +50,12 @@ public sealed partial class WindowsAutomation
                     Native.AttachThreadInput(currentThread, targetThread, false);
             }
         }
+
+        if (Native.GetForegroundWindow() != handle)
+            RequestForeground(attachInputThreads: false);
+
+        if (!Native.IsIconic(handle) && Native.GetForegroundWindow() != handle)
+            RequestForeground(attachInputThreads: true);
 
         if (!Native.IsIconic(handle) && Native.GetForegroundWindow() != handle)
         {
