@@ -91,6 +91,61 @@ public sealed partial class WindowsAutomation
         }
     }
 
+    public FindElementsResponse FindElements(nint handle, FindElementsRequest request)
+    {
+        RequireWindow(handle);
+        using var automation = new UIA3Automation();
+        try
+        {
+            var result = SemanticFinder.Find(automation.FromHandle(handle), request.Locator,
+                request.MaxResults ?? InputLimits.MaxFindResults, request.MaxNodes ?? InputLimits.MaxLocatorNodes,
+                request.MaxDepth ?? InputLimits.MaxLocatorDepth,
+                element => element.FindAllChildren(), Matches);
+            var elements = new List<FoundElement>();
+            foreach (var element in result.Matches)
+            {
+                var rect = element.BoundingRectangle;
+                var name = element.Properties.Name.ValueOrDefault;
+                var id = element.Properties.AutomationId.ValueOrDefault;
+                var controlType = element.ControlType.ToString();
+                // Prefer all exact fields. Null means this provider exposed no valid
+                // identifying criteria, so no actionable semantic locator exists.
+                ElementLocator? candidate = new ElementLocator(
+                    ValidField(id) ? id : null,
+                    ValidField(name) ? name : null,
+                    ValidField(controlType) ? controlType : null,
+                    request.Locator.Ancestor);
+                if (!InputLimits.ValidLocator(candidate)) candidate = null;
+                var unique = candidate is not null && result.Complete &&
+                    result.Eligible.Count(item => Matches(item, candidate)) == 1;
+                var state = new FoundElementState(WindowHandle.Format(handle), Compact(name), Compact(controlType)!,
+                    Compact(id), element.Properties.IsEnabled.Value, element.Properties.HasKeyboardFocus.Value,
+                    element.Properties.IsOffscreen.Value, new RectDto(rect.Left, rect.Top, rect.Width, rect.Height),
+                    element.Patterns.Invoke.IsSupported, element.Patterns.Value.IsSupported);
+                elements.Add(new FoundElement(state, candidate, unique));
+            }
+            return new FindElementsResponse(WindowHandle.Format(handle), elements, result.Visited, result.Complete);
+        }
+        catch (Exception error) when (UiTreeReader.IsProviderFailure(error))
+        {
+            throw new AutomationException("locator_provider_failed", "UI Automation could not complete the find search or state read.");
+        }
+    }
+
+    private static bool ValidField(string? value) => value is { Length: > 0 and <= InputLimits.MaxLocatorTextLength } &&
+        !string.IsNullOrWhiteSpace(value);
+
+    private static string? Compact(string? value) => value is { Length: > InputLimits.MaxLocatorTextLength }
+        ? value[..InputLimits.MaxLocatorTextLength] : value;
+
+    private static bool Matches(AutomationElement element, ElementLocator criteria) =>
+        (criteria.AutomationId is null || string.Equals(element.Properties.AutomationId.ValueOrDefault,
+            criteria.AutomationId, StringComparison.Ordinal)) &&
+        (criteria.Name is null || string.Equals(element.Properties.Name.ValueOrDefault,
+            criteria.Name, StringComparison.Ordinal)) &&
+        (criteria.ControlType is null || string.Equals(element.ControlType.ToString(),
+            criteria.ControlType, StringComparison.Ordinal));
+
     public ElementState Focus(nint handle, ElementLocator locator)
     {
         using var automation = new UIA3Automation();
@@ -159,13 +214,7 @@ public sealed partial class WindowsAutomation
         try
         {
             return SemanticLocator.Resolve(automation.FromHandle(handle), locator,
-                element => element.FindAllChildren(), (element, criteria) =>
-                    (criteria.AutomationId is null || string.Equals(element.Properties.AutomationId.ValueOrDefault,
-                        criteria.AutomationId, StringComparison.Ordinal)) &&
-                    (criteria.Name is null || string.Equals(element.Properties.Name.ValueOrDefault,
-                        criteria.Name, StringComparison.Ordinal)) &&
-                    (criteria.ControlType is null || string.Equals(element.ControlType.ToString(),
-                        criteria.ControlType, StringComparison.Ordinal)));
+                element => element.FindAllChildren(), Matches);
         }
         catch (Exception error) when (UiTreeReader.IsProviderFailure(error))
         {

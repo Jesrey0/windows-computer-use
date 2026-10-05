@@ -21,6 +21,38 @@ public sealed record InvokeRequest(string Handle, int[] Path);
 public sealed record SetValueRequest(string Handle, int[] Path, string Value);
 public sealed record ClickRequest(int X, int Y);
 public sealed record KeysRequest(string? Text, ushort? VirtualKey);
+public sealed record KeyChord(ushort Key, ushort[]? Modifiers = null);
+public sealed record KeySequenceRequest(KeyChord[]? Chords);
+public sealed record MoveRequest(int X, int Y);
+public sealed record PointerClickRequest(int X, int Y, string Button, int Count);
+public sealed record ScrollRequest(int Delta, int? X = null, int? Y = null);
+public sealed record WindowState(string Handle, int ProcessId, string Title, RectDto Bounds,
+    string? ExecutablePath, string? ProcessName, bool Visible, bool Minimized, bool Maximized,
+    bool Foreground, bool Enabled);
+public sealed record CloseWindowResponse(string Handle, bool RequestPosted, bool Disappeared);
+public sealed record FindElementsRequest(string Handle, ElementLocator Locator, int? MaxResults = null,
+    int? MaxNodes = null, int? MaxDepth = null);
+public sealed record FoundElementState(string Handle, string? Name, string ControlType, string? AutomationId,
+    bool Enabled, bool Focused, bool Offscreen, RectDto Bounds, bool CanInvoke, bool CanSetValue);
+public sealed record FoundElement(FoundElementState State, ElementLocator? Locator, bool LocatorUnique);
+public sealed record FindElementsResponse(string Handle, List<FoundElement> Elements, int VisitedNodes, bool Complete);
+public sealed record CapabilitiesResponse(string ApiVersion, string HostVersion, string[] LocatorFields,
+    string[] SemanticActions, string[] InputActions, string[] WindowActions, CapabilityLimits Limits);
+public sealed record CapabilityLimits(int MaxLocatorDepth, int MaxLocatorNodes, int MaxLocatorTextLength,
+    int MaxFindResults, int MaxKeySequence, int MaxVirtualKey, int MaxWheelDelta,
+    int MaxTextLength, int MaxValueLength, int MaxTreeDepth, int MaxTreeNodes, int MaxClickCount);
+public static class Capabilities
+{
+    public static CapabilitiesResponse Current => new("v1", typeof(WindowsAutomation).Assembly.GetName().Version?.ToString() ?? "unknown",
+        ["automationId", "name", "controlType"],
+        ["tree", "inspect", "find-elements", "focus", "invoke", "set-value"],
+        ["click", "keys", "key-sequence", "move", "pointer-click", "scroll"],
+        ["list", "state", "activate", "close", "screenshot"],
+        new(InputLimits.MaxLocatorDepth, InputLimits.MaxLocatorNodes, InputLimits.MaxLocatorTextLength,
+            InputLimits.MaxFindResults, InputLimits.MaxKeySequence, InputLimits.MaxVirtualKey,
+            InputLimits.MaxWheelDelta, InputLimits.MaxTextLength, InputLimits.MaxValueLength,
+            InputLimits.MaxDepth, InputLimits.MaxNodes, 2));
+}
 public sealed record ActionResponse(bool Success);
 public sealed record ElementLocator(string? AutomationId = null, string? Name = null, string? ControlType = null, ElementLocator? Ancestor = null);
 public sealed record LocatedElementRequest(string Handle, ElementLocator Locator);
@@ -40,6 +72,26 @@ public static class InputLimits
     public const int MaxLocatorDepth = 20;
     public const int MaxLocatorNodes = 2000;
     public const int MaxLocatorTextLength = 256;
+    public const int MaxFindResults = 100;
+    public const int MaxKeySequence = 32;
+    public const int MaxVirtualKey = 254;
+    public const int MaxWheelDelta = 1200;
+
+    public static bool ValidSequence(KeySequenceRequest? request) => request?.Chords is
+        { Length: >= 1 and <= MaxKeySequence } chords && chords.All(chord => chord is not null &&
+            chord.Key is >= 1 and <= MaxVirtualKey && chord.Modifiers is { Length: <= 3 } modifiers &&
+            modifiers.All(key => key is 0x10 or 0x11 or 0x12) && modifiers.Distinct().Count() == modifiers.Length &&
+            !modifiers.Contains(chord.Key));
+
+    public static bool ValidPointerClick(PointerClickRequest? request) => request is not null &&
+        request.Button is "left" or "right" && request.Count is 1 or 2;
+    public static bool ValidScroll(ScrollRequest? request) => request is not null &&
+        request.Delta is >= -MaxWheelDelta and <= MaxWheelDelta and not 0 &&
+        (request.X.HasValue == request.Y.HasValue);
+    public static bool ValidFind(FindElementsRequest? request) => request is not null &&
+        ValidLocator(request.Locator) && (request.MaxResults is null or >= 1 and <= MaxFindResults) &&
+        (request.MaxNodes is null or >= 1 and <= MaxLocatorNodes) &&
+        (request.MaxDepth is null or >= 0 and <= MaxLocatorDepth);
 
     public static bool ValidTree(int depth, int maxNodes) =>
         depth is >= 0 and <= MaxDepth && maxNodes is >= 1 and <= MaxNodes;

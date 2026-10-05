@@ -3,8 +3,10 @@
 Standalone Windows-native automation service for local clients. .NET 10 / Windows x64;
 no plugin or remote server required. Source is maintained in WSL; execution is in an
 **interactive Windows user session** (not a Windows service or elevated task).
-Published releases are self-contained: the target Windows machine does not need
-.NET installed; only the development/publishing machine needs the .NET 10 SDK.
+The 0.3.0 feature bundle is source-only until operator publication (current accepted
+release: 0.2.4). Published releases are self-contained: the target Windows machine
+does not need .NET installed; only the development/publishing machine needs the
+.NET 10 SDK.
 
 ## Develop from WSL
 
@@ -18,8 +20,8 @@ For a versioned Windows install, open Windows PowerShell in the WSL source direc
 (for example `\\wsl.localhost\Ubuntu-24.04\home\jesrey0\projects\windows-computer-use`):
 
 ```powershell
-.\scripts\publish.ps1 -Version 0.1.0
-.\scripts\install.ps1 -Version 0.1.0
+.\scripts\publish.ps1 -Version 0.3.0
+.\scripts\install.ps1 -Version 0.3.0
 & "$env:LOCALAPPDATA\WindowsComputerUse\wcu-host.cmd"  # leave running in this terminal
 & "$env:LOCALAPPDATA\WindowsComputerUse\wcu.cmd" health
 & "$env:LOCALAPPDATA\WindowsComputerUse\wcu.cmd" windows
@@ -28,6 +30,8 @@ For a versioned Windows install, open Windows PowerShell in the WSL source direc
 # After a semantic-capable release, diagnostic readback or explicit activation:
 & "$env:LOCALAPPDATA\WindowsComputerUse\wcu.cmd" inspect 0x123456 ValidationText
 & "$env:LOCALAPPDATA\WindowsComputerUse\wcu.cmd" activate 0x123456
+& "$env:LOCALAPPDATA\WindowsComputerUse\wcu.cmd" capabilities
+& "$env:LOCALAPPDATA\WindowsComputerUse\wcu.cmd" state 0x123456
 ```
 
 Alternatively build and run the Host and CLI projects with Windows `dotnet` directly;

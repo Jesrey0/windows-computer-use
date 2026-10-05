@@ -119,6 +119,49 @@ public sealed partial class WindowsAutomation
     public ScreenshotResult Screenshot(nint? handle) => ScreenCapture.Capture(handle);
     public void Click(int x, int y) => NativeInput.Click(x, y);
     public void Keys(KeysRequest request) => NativeInput.Keys(request);
+    public void Sequence(KeySequenceRequest request) => NativeInput.Sequence(request);
+    public void Move(int x, int y) => NativeInput.Move(x, y);
+    public void PointerClick(PointerClickRequest request) => NativeInput.PointerClick(request);
+    public void Scroll(ScrollRequest request) => NativeInput.Scroll(request);
+
+    public WindowState State(nint handle)
+    {
+        RequireWindow(handle);
+        if (!Native.GetWindowRect(handle, out var rect))
+            throw new AutomationException("window_state_unavailable", "Window bounds unavailable.");
+        Native.GetWindowThreadProcessId(handle, out var pid);
+        var title = new StringBuilder(Math.Min(Native.GetWindowTextLength(handle) + 1, 32768));
+        Native.GetWindowText(handle, title, title.Capacity);
+        string? executable = null;
+        string? processName = null;
+        var process = Native.OpenProcess(0x1000, false, pid);
+        if (process != 0)
+        {
+            try
+            {
+                var path = new StringBuilder(32768);
+                var size = path.Capacity;
+                if (Native.QueryFullProcessImageName(process, 0, path, ref size))
+                {
+                    executable = path.ToString();
+                    processName = Path.GetFileName(executable);
+                }
+            }
+            finally { Native.CloseHandle(process); }
+        }
+        return new WindowState(WindowHandle.Format(handle), (int)pid, title.ToString(),
+            new RectDto(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top),
+            executable, processName, Native.IsWindowVisible(handle), Native.IsIconic(handle),
+            Native.IsZoomed(handle), Native.GetForegroundWindow() == handle, Native.IsWindowEnabled(handle));
+    }
+
+    public CloseWindowResponse Close(nint handle)
+    {
+        RequireWindow(handle);
+        if (!Native.PostMessage(handle, 0x0010, 0, 0))
+            throw new AutomationException("close_not_posted", "Could not post WM_CLOSE to window.");
+        return new CloseWindowResponse(WindowHandle.Format(handle), true, !Native.IsWindow(handle));
+    }
 }
 
 internal static class Native
@@ -139,6 +182,10 @@ internal static class Native
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool AttachThreadInput(uint attach, uint attachTo, [MarshalAs(UnmanagedType.Bool)] bool attachState);
     [DllImport("kernel32.dll")] internal static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool IsIconic(nint handle);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool IsZoomed(nint handle);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool IsWindowEnabled(nint handle);
+    [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool PostMessage(nint handle, uint message, nint wParam, nint lParam);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool ShowWindow(nint handle, int command);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetWindowRect(nint handle, out Rect rect);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetWindowText(nint handle, StringBuilder text, int max);

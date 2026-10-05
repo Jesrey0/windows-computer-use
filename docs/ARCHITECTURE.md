@@ -14,6 +14,9 @@
 
 ## HTTP v1
 
+0.3.0 is the target **source** version of this bundle; the currently accepted
+installed release remains 0.2.4 until an operator publishes and installs it.
+
 Kestrel binds **only `127.0.0.1:17842`**, not IPv6 or a network interface.
 `GET /health` is public (`{status,version}`). All other endpoints require
 `Authorization: Bearer <token>`; only the Windows user running the host/CLI can
@@ -36,6 +39,14 @@ Do not share bearer tokens, forward the port, or log request headers.
 | `POST /v1/actions/set-value-located` | JSON `{"handle":"0x1234","locator":{"automationId":"editor"},"value":"text"}`; fresh lookup, then ValuePattern. Verify via inspect. |
 | `POST /v1/input/click` | JSON `{"x":100,"y":200}` virtual-screen pixel coordinates; foreground focus is not changed. |
 | `POST /v1/input/keys` | JSON `{"text":"hello"}` (1–256 UTF-16 units, Unicode SendInput) **or** `{"virtualKey":13}` (single VK down/up). |
+| `GET /v1/capabilities` | Authenticated compact feature-negotiation contract: `{apiVersion:"v1",hostVersion,locatorFields,semanticActions,inputActions,windowActions,limits}`. Version is the running Core assembly version, not the installed release pointer. |
+| `GET /v1/windows/{handle}/state` | Compact `{handle,processId,title,bounds,executablePath,processName,visible,minimized,maximized,foreground,enabled}`; process path/name nullable if inaccessible. Immediate observation, not a promise that state stays fixed. |
+| `POST /v1/windows/{handle}/close` | No body. Posts ordinary `WM_CLOSE` only; `{handle,requestPosted:true,disappeared:bool}`. `disappeared` is an immediate `IsWindow` observation, **not** a wait or guarantee that the app accepted close. Posting failure is `close_not_posted` (422). Never terminates the process. |
+| `POST /v1/elements/find` | `{"handle":"0x1234","locator":{"controlType":"Button"},"maxResults":100,"maxNodes":2000,"maxDepth":20}` (limits optional). Returns `{handle,elements:[{state,locator,locatorUnique}],visitedNodes,complete}`. Exact, case-sensitive fields and optional unique ancestor as for inspect. Many results allowed; at most 100 returned. `locator` is the available exact name/ID/type plus requested ancestor, or null if no valid identifying fields; `locatorUnique` is true **only** if a complete search shows that exact locator unique in scope. Ambiguous locators are descriptions, not actionable unique selectors: refine criteria or ancestor before acting. |
+| `POST /v1/input/key-sequence` | `{"chords":[{"key":65,"modifiers":[17,16]}]}`. 1–32 ordered chords; each `key` VK 1–254, modifiers unique from 16 (Shift), 17 (Ctrl), 18 (Alt), max three; never the same as key. Normalized down order Ctrl→Shift→Alt→key and reverse up order; release attempted on failures. No raw scan codes. Sends to current foreground focus; does not activate. |
+| `POST /v1/input/move` | `{"x":100,"y":200}` virtual-screen pixel coordinate; sends absolute virtual-desktop move. |
+| `POST /v1/input/pointer-click` | `{"x":100,"y":200,"button":"right","count":2}`; left/right and count 1/2 only. Moves first, then ordered down/up pairs; no drag. Existing `/v1/input/click` remains left single click. |
+| `POST /v1/input/scroll` | `{"delta":-120,"x":100,"y":200}`. Signed nonzero wheel delta ±1200; optional x/y must both occur and move first. Without x/y uses current pointer location. |
 
 Handles are hexadecimal (with optional `0x`); window handles can be recycled.
 Semantic locators use one or more **case-sensitive, ordinal, exact** `automationId`,
@@ -53,6 +64,20 @@ another search budget is exceeded. Locators can themselves become stale
 when UI labels/IDs change; client should re-observe or use more stable fields.
 Unavailable provider data aborts semantic lookup rather than returning a false
 no-match or a false unique match.
+
+Find searches root plus descendants, or descendants of one uniquely resolved
+ancestor. The ancestor search and match search share a 2000-node budget; traversal
+is depth-first through depth 20, with 100 result maximum (smaller positive per-call
+limits accepted). `complete:false` means node/depth/result limits prevented
+exhaustive traversal; absence of a match then proves nothing. If the ancestor's
+uniqueness itself cannot be established, the call fails with
+`locator_limit_exceeded` rather than returning a misleading partial scope.
+Provider failures fail the request (`locator_provider_failed`). Returned state
+is a live read; unique locators must still be resolved afresh when used for an
+action and may become stale. No cache, wait, or fuzzy search.
+Find `state` includes handle, name, controlType, automationId, enabled, focused,
+offscreen, bounds and Invoke/Value support, **not value**. Summary text is capped
+to 256 UTF-16 units; truncated text is never used in an exact locator field.
 
 Locator failures use problem-details `code`: `invalid_locator` (400),
 `locator_not_found` / `locator_ancestor_not_found` (404),
@@ -83,6 +108,23 @@ v1 has bounded tree depth/node output but cannot impose a hard timeout inside
 third-party UIA provider calls. A failure yields a problem-details response,
 not a privilege escalation. Invalid coordinates, unavailable windows and
 unsupported patterns have distinct errors.
+
+New request validation failures use problem-details `code` (`invalid_input`,
+`invalid_find`, `invalid_coordinates`, `invalid_handle`), with HTTP 400;
+`window_not_found` uses 404. A posted close does not assert application effect.
+Successful SendInput calls acknowledge injected events, not application readback.
+Clients observe state again after input and can decide when/if to poll.
+
+### CLI (installed `wcu.cmd`)
+
+Existing `health`, `windows`, `tree`, `screenshot`, `activate`, `inspect` remain.
+New commands: `capabilities`; `state <handle>`; `close <handle>`;
+`find <handle> '<locator-json>' [maxResults [maxNodes [maxDepth]]]`;
+`key-sequence '<json>'` (same `{chords:[...]}` body as HTTP);
+`move <x> <y>`; `pointer-click <x> <y> <left|right> <1|2>`;
+`scroll <delta> [x y]`. JSON arguments should be quoted for the invoking shell;
+non-success HTTP prints the problem details and exits nonzero. CLI does not
+poll, auto-activate, or choose a window on the operator's behalf.
 
 Screen capture uses Win32 PrintWindow (including full-content flag) for a
 window, falling back to BitBlt of *visible* desktop pixels if it fails; desktop
@@ -119,7 +161,17 @@ security boundary. Bind remains Windows loopback only.
 
 ## Operator semantic acceptance (after an operator-owned release)
 
-From an interactive Windows PowerShell session, start the *new* installed host,
+For the **0.3.0** bundle, start the operator-installed 0.3.0 host in the
+interactive Windows session and run `.\scripts\capability-acceptance.ps1 -ExpectedVersion 0.3.0`.
+It creates its own WPF window, verifies capabilities, window state, bounded
+find/locator, pointer move/left double/right click/wheel, ordered Ctrl/Shift
+chords with text readback, and WM_CLOSE acknowledgement followed by bounded
+polling for disappearance. It may force-stop **only its own disposable test
+process** during cleanup if close has not completed. No arbitrary sleeps or
+input to Calculator/unrelated user apps. Run it only while its disposable window
+can remain foreground; do not switch focus during input assertions.
+
+For prior semantic coverage, from an interactive Windows PowerShell session start the installed host,
 open Calculator in Standard mode (this test clears its display and enters 7),
 and run from this repository:
 

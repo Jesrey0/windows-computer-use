@@ -45,7 +45,12 @@ app.Use(async (context, next) =>
 });
 
 app.MapGet("/health", () => new HealthResponse("ok", typeof(WindowsAutomation).Assembly.GetName().Version?.ToString() ?? "unknown"));
+app.MapGet("/v1/capabilities", () => Capabilities.Current);
 app.MapGet("/v1/windows", (WindowsAutomation automation) => automation.Windows());
+app.MapGet("/v1/windows/{handle}/state", (string handle, WindowsAutomation automation) =>
+    automation.State(ParseHandle(handle)));
+app.MapPost("/v1/windows/{handle}/close", (string handle, WindowsAutomation automation) =>
+    automation.Close(ParseHandle(handle)));
 app.MapPost("/v1/windows/{handle}/activate", (string handle, WindowsAutomation automation) =>
     automation.Activate(ParseHandle(handle)));
 app.MapGet("/v1/windows/{handle}/tree", (string handle, int? depth, int? maxNodes, WindowsAutomation automation) =>
@@ -77,6 +82,12 @@ app.MapPost("/v1/actions/set-value", (SetValueRequest? request, WindowsAutomatio
 });
 app.MapPost("/v1/elements/inspect", (LocatedElementRequest? request, WindowsAutomation automation) =>
     automation.Inspect(LocatedHandle(request), request!.Locator));
+app.MapPost("/v1/elements/find", (FindElementsRequest? request, WindowsAutomation automation) =>
+{
+    if (!InputLimits.ValidFind(request))
+        throw new AutomationException("invalid_find", "Invalid locator or find limits.", 400);
+    return automation.FindElements(ParseHandle(request!.Handle), request);
+});
 app.MapPost("/v1/elements/focus", (LocatedElementRequest? request, WindowsAutomation automation) =>
     automation.Focus(LocatedHandle(request), request!.Locator));
 app.MapPost("/v1/actions/invoke-located", (LocatedElementRequest? request, WindowsAutomation automation) =>
@@ -105,6 +116,33 @@ app.MapPost("/v1/input/keys", (KeysRequest? request, WindowsAutomation automatio
         return Results.Problem(statusCode: 400, title: "Provide text or virtualKey, but not both.");
     automation.Keys(request!);
     return Results.Ok(new ActionResponse(true));
+});
+app.MapPost("/v1/input/key-sequence", (KeySequenceRequest? request, WindowsAutomation automation) =>
+{
+    if (!InputLimits.ValidSequence(request))
+        throw new AutomationException("invalid_input", "Invalid key sequence, VK or modifiers.", 400);
+    automation.Sequence(request!);
+    return new ActionResponse(true);
+});
+app.MapPost("/v1/input/move", (MoveRequest? request, WindowsAutomation automation) =>
+{
+    if (request is null) throw new AutomationException("invalid_input", "Coordinates required.", 400);
+    automation.Move(request.X, request.Y);
+    return new ActionResponse(true);
+});
+app.MapPost("/v1/input/pointer-click", (PointerClickRequest? request, WindowsAutomation automation) =>
+{
+    if (!InputLimits.ValidPointerClick(request))
+        throw new AutomationException("invalid_input", "Use left or right button and count 1 or 2.", 400);
+    automation.PointerClick(request!);
+    return new ActionResponse(true);
+});
+app.MapPost("/v1/input/scroll", (ScrollRequest? request, WindowsAutomation automation) =>
+{
+    if (!InputLimits.ValidScroll(request))
+        throw new AutomationException("invalid_input", "Invalid wheel delta or coordinate pair.", 400);
+    automation.Scroll(request!);
+    return new ActionResponse(true);
 });
 
 app.Run();

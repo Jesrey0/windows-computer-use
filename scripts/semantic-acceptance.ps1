@@ -1,5 +1,5 @@
 param(
-    [string]$ExpectedVersion,
+    [string]$ExpectedVersion = '0.3.0',
     [string]$CalculatorHandle
 )
 $ErrorActionPreference = 'Stop'
