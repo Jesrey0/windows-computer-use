@@ -59,6 +59,11 @@ try
             body = JsonSerializer.Deserialize<KeySequenceRequest>(args[1], jsonOptions);
             if (!InputLimits.ValidSequence((KeySequenceRequest?)body)) { Usage(); return 2; }
             break;
+        case "drag" when args.Length == 2:
+            url = "/v1/input/drag";
+            body = JsonSerializer.Deserialize<DragRequest>(args[1], jsonOptions);
+            if (!InputLimits.ValidDrag((DragRequest?)body)) { Usage(); return 2; }
+            break;
         case "move" when args.Length == 3 && int.TryParse(args[1], out var mx) && int.TryParse(args[2], out var my):
             url = "/v1/input/move"; body = new MoveRequest(mx, my); break;
         case "pointer-click" when args.Length == 5 && int.TryParse(args[1], out var cx) && int.TryParse(args[2], out var cy) && int.TryParse(args[4], out var count):
@@ -106,4 +111,4 @@ catch (JsonException)
     Usage(); return 2;
 }
 
-static void Usage() => Console.Error.WriteLine("Usage: wcu health | capabilities | windows | state <handle> | close <handle> | tree <handle> | screenshot <handle> <new-png-path> | activate <handle> | inspect <handle> <automation-id> | find <handle> '<locator-json>' [maxResults [maxNodes [maxDepth]]] | key-sequence '<json>' | move <x> <y> | pointer-click <x> <y> <left|right> <1|2> | scroll <delta> [x y]");
+static void Usage() => Console.Error.WriteLine("Usage: wcu health | capabilities | windows | state <handle> | close <handle> | tree <handle> | screenshot <handle> <new-png-path> | activate <handle> | inspect <handle> <automation-id> | find <handle> '<locator-json>' [maxResults [maxNodes [maxDepth]]] | key-sequence '<json>' | drag '<json>' | move <x> <y> | pointer-click <x> <y> <left|right> <1|2> | scroll <delta> [x y]");

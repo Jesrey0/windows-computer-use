@@ -123,6 +123,7 @@ public sealed partial class WindowsAutomation
     public void Move(int x, int y) => NativeInput.Move(x, y);
     public void PointerClick(PointerClickRequest request) => NativeInput.PointerClick(request);
     public void Scroll(ScrollRequest request) => NativeInput.Scroll(request);
+    public DragResponse Drag(DragRequest? request) => NativeInput.Drag(request);
 
     public WindowState State(nint handle)
     {

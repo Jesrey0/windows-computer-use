@@ -14,8 +14,8 @@
 
 ## HTTP v1
 
-0.3.0 is the target **source** version of this bundle; the currently accepted
-installed release remains 0.2.4 until an operator publishes and installs it.
+This contract targets 0.4.0. Publication, installation, and live release
+acceptance belong to the operator; source version does not assert runtime state.
 
 Kestrel binds **only `127.0.0.1:17842`**, not IPv6 or a network interface.
 `GET /health` is public (`{status,version}`). All other endpoints require
@@ -47,6 +47,54 @@ Do not share bearer tokens, forward the port, or log request headers.
 | `POST /v1/input/move` | `{"x":100,"y":200}` virtual-screen pixel coordinate; sends absolute virtual-desktop move. |
 | `POST /v1/input/pointer-click` | `{"x":100,"y":200,"button":"right","count":2}`; left/right and count 1/2 only. Moves first, then ordered down/up pairs; no drag. Existing `/v1/input/click` remains left single click. |
 | `POST /v1/input/scroll` | `{"delta":-120,"x":100,"y":200}`. Signed nonzero wheel delta ±1200; optional x/y must both occur and move first. Without x/y uses current pointer location. |
+| `POST /v1/input/drag` | `{"points":[{"x":100,"y":200},{"x":300,"y":200}],"durationMs":400,"stepsPerSegment":16}`. Two points describe a straight drag; 3–128 describe a stroke/polyline. Always left button. Returns `{success:true,metadata:{elapsedMs,emittedInputCount,steps}}`. |
+
+### Bounded pointer gestures
+
+`points` contains 2–128 vertices with required signed 32-bit integer `x` and `y`
+in virtual-desktop pixels. Negative coordinates work on monitors left/above the
+primary display. Every vertex must be inside the current virtual desktop;
+vertices are checked before input begins, and each emitted move checks again.
+No mouse button selector, raw down/up, or drag-and-drop protocol is exposed.
+
+`durationMs` defaults to 0 (immediate injection), accepts 0–5000, and only paces
+the gesture. `stepsPerSegment` is optional, positive, and applies uniformly to
+every segment. The movement budget includes the initial point:
+`1 + (points.length - 1) * stepsPerSegment <= 512`. By default it is
+`min(16, floor(511 / (points.length - 1)))`. Capabilities advertise `drag` plus
+`maxDragPoints:128`, `maxDragDurationMs:5000`, and `maxDragSteps:512` (total moves,
+including the initial point). Coordinates and pixel distance do not increase
+the number of steps. Repeated vertices are permitted and still consume steps.
+
+Interpolation uses integer offsets truncated toward zero on each axis,
+preserves each requested vertex exactly, and omits duplicate starts at segment
+joins. The primitive moves to the first point, presses left, emits all remaining
+points, and releases left in `finally` after a successful down. Positive duration
+is distributed uniformly over interpolation steps using cumulative deadlines;
+overdue steps proceed immediately. This adds no condition waiting, retries,
+activation, or application readback to core. OS scheduling and injection cost
+can make elapsed time exceed the requested duration. Clients must keep the
+intended target foreground and avoid competing pointer input during a gesture.
+Drag moves add Win32 [`MOUSEEVENTF_MOVE_NOCOALESCE`](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-mouseinput)
+to preserve separate `WM_MOUSEMOVE` messages for rapid strokes. Existing
+move/click/scroll use their original flags.
+
+Drag alone includes optional response metadata, currently returned on every
+success: `elapsedMs` measures execution from the first move through release,
+excluding request parsing, interpolation, and initial desktop validation;
+`steps` counts interpolated moves after the first point; `emittedInputCount`
+counts successful SendInput events, including the initial move and down/up
+(`steps + 3`). It measures injection, not events received by an application;
+Application/framework move processing can reduce observed events. Existing action
+response shapes are unchanged.
+
+Malformed JSON, missing/out-of-int coordinates, invalid point count, duration,
+or step budget return `invalid_input` (400). Off-desktop coordinates return
+`invalid_coordinates` (400); injection failures return `input_blocked` (422).
+If the final release fails, `drag_release_failed` (422) explicitly reports
+unconfirmed button state, including the earlier gesture error code in the
+message when there was one. Failed initial move/down does not send an up.
+Successful release preserves any preceding movement/pacing failure.
 
 Handles are hexadecimal (with optional `0x`); window handles can be recycled.
 Semantic locators use one or more **case-sensitive, ordinal, exact** `automationId`,
@@ -122,7 +170,8 @@ New commands: `capabilities`; `state <handle>`; `close <handle>`;
 `find <handle> '<locator-json>' [maxResults [maxNodes [maxDepth]]]`;
 `key-sequence '<json>'` (same `{chords:[...]}` body as HTTP);
 `move <x> <y>`; `pointer-click <x> <y> <left|right> <1|2>`;
-`scroll <delta> [x y]`. JSON arguments should be quoted for the invoking shell;
+`scroll <delta> [x y]`; `drag '<json>'` (same typed points/duration/steps body as HTTP).
+JSON arguments should be quoted for the invoking shell;
 non-success HTTP prints the problem details and exits nonzero. CLI does not
 poll, auto-activate, or choose a window on the operator's behalf.
 
@@ -161,24 +210,29 @@ security boundary. Bind remains Windows loopback only.
 
 ## Operator semantic acceptance (after an operator-owned release)
 
-For the **0.3.0** bundle, start the operator-installed 0.3.0 host in the
-interactive Windows session and run `.\scripts\capability-acceptance.ps1 -ExpectedVersion 0.3.0`.
+For the **0.4.0** bundle, start the operator-installed 0.4.0 host in the
+interactive Windows session and run `.\scripts\capability-acceptance.ps1 -ExpectedVersion 0.4.0`.
 It creates its own WPF window, verifies capabilities, window state, bounded
 find/locator, pointer move/left double/right click/wheel, ordered Ctrl/Shift
-chords with text readback, and WM_CLOSE acknowledgement followed by bounded
-polling for disappearance. It may force-stop **only its own disposable test
+chords with text readback, straight and polyline gestures on a disposable WPF
+Canvas (drawn points, ordered left Down/Move/Up, stroke corner and endpoint
+readback, plus injection timing/count metadata), and WM_CLOSE acknowledgement
+followed by bounded polling for disappearance. It may force-stop **only its own disposable test
 process** during cleanup if close has not completed. No arbitrary sleeps or
 input to Calculator/unrelated user apps. Run it only while its disposable window
 can remain foreground; do not switch focus during input assertions.
+The drawing checks pace each gesture over 400ms to allow WPF to process moves;
+they do not equate observed WPF moves with injected events. The script never
+installs or restarts the host. A release mismatch fails before pointer input.
 
 For prior semantic coverage, from an interactive Windows PowerShell session start the installed host,
 open Calculator in Standard mode (this test clears its display and enters 7),
 and run from this repository:
 
 ```powershell
-.\scripts\semantic-acceptance.ps1 -ExpectedVersion '0.2.4'  # replace with actual new version
+.\scripts\semantic-acceptance.ps1 -ExpectedVersion '0.4.0'
 # For localized Calculator titles, supply its handle from `wcu windows`:
-.\scripts\semantic-acceptance.ps1 -ExpectedVersion '0.2.4' -CalculatorHandle 0x123456
+.\scripts\semantic-acceptance.ps1 -ExpectedVersion '0.4.0' -CalculatorHandle 0x123456
 ```
 
 The script uses the per-user token (never prints it), creates and removes a

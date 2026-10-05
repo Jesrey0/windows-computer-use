@@ -1,5 +1,6 @@
 using System.Net;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using WindowsComputerUse.Core;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -143,6 +144,18 @@ app.MapPost("/v1/input/scroll", (ScrollRequest? request, WindowsAutomation autom
         throw new AutomationException("invalid_input", "Invalid wheel delta or coordinate pair.", 400);
     automation.Scroll(request!);
     return new ActionResponse(true);
+});
+app.MapPost("/v1/input/drag", async (HttpRequest request, WindowsAutomation automation) =>
+{
+    if (!request.HasJsonContentType())
+        throw new AutomationException("invalid_input", "Drag requires a JSON request body.", 400);
+    DragRequest? drag;
+    try { drag = await request.ReadFromJsonAsync<DragRequest>(); }
+    catch (JsonException)
+    {
+        throw new AutomationException("invalid_input", "Invalid drag JSON; every point requires int x and y.", 400);
+    }
+    return automation.Drag(drag);
 });
 
 app.Run();

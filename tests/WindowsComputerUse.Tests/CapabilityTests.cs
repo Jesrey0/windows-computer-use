@@ -56,7 +56,14 @@ public class CapabilityTests
         Assert.Contains("close", data.WindowActions);
         Assert.Equal(InputLimits.MaxFindResults, data.Limits.MaxFindResults);
         Assert.Equal(InputLimits.MaxKeySequence, data.Limits.MaxKeySequence);
+        Assert.Contains("drag", data.InputActions);
+        Assert.Equal(InputLimits.MaxDragPoints, data.Limits.MaxDragPoints);
+        Assert.Equal(InputLimits.MaxDragDurationMs, data.Limits.MaxDragDurationMs);
+        Assert.Equal(InputLimits.MaxDragSteps, data.Limits.MaxDragSteps);
         var json = JsonSerializer.Serialize(data, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.Contains("\"locatorFields\":[\"automationId\",\"name\",\"controlType\"]", json);
+        Assert.Contains("\"maxDragPoints\":128", json);
+        Assert.Contains("\"maxDragDurationMs\":5000", json);
+        Assert.Contains("\"maxDragSteps\":512", json);
     }
 }

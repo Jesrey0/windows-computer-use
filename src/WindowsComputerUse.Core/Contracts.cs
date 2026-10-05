@@ -26,6 +26,11 @@ public sealed record KeySequenceRequest(KeyChord[]? Chords);
 public sealed record MoveRequest(int X, int Y);
 public sealed record PointerClickRequest(int X, int Y, string Button, int Count);
 public sealed record ScrollRequest(int Delta, int? X = null, int? Y = null);
+public sealed record DragPoint([property: System.Text.Json.Serialization.JsonRequired] int X,
+    [property: System.Text.Json.Serialization.JsonRequired] int Y);
+public sealed record DragRequest(DragPoint[]? Points, int DurationMs = 0, int? StepsPerSegment = null);
+public sealed record DragMetadata(double ElapsedMs, int EmittedInputCount, int Steps);
+public sealed record DragResponse(bool Success, DragMetadata? Metadata = null);
 public sealed record WindowState(string Handle, int ProcessId, string Title, RectDto Bounds,
     string? ExecutablePath, string? ProcessName, bool Visible, bool Minimized, bool Maximized,
     bool Foreground, bool Enabled);
@@ -40,18 +45,20 @@ public sealed record CapabilitiesResponse(string ApiVersion, string HostVersion,
     string[] SemanticActions, string[] InputActions, string[] WindowActions, CapabilityLimits Limits);
 public sealed record CapabilityLimits(int MaxLocatorDepth, int MaxLocatorNodes, int MaxLocatorTextLength,
     int MaxFindResults, int MaxKeySequence, int MaxVirtualKey, int MaxWheelDelta,
-    int MaxTextLength, int MaxValueLength, int MaxTreeDepth, int MaxTreeNodes, int MaxClickCount);
+    int MaxTextLength, int MaxValueLength, int MaxTreeDepth, int MaxTreeNodes, int MaxClickCount,
+    int MaxDragPoints, int MaxDragDurationMs, int MaxDragSteps);
 public static class Capabilities
 {
     public static CapabilitiesResponse Current => new("v1", typeof(WindowsAutomation).Assembly.GetName().Version?.ToString() ?? "unknown",
         ["automationId", "name", "controlType"],
         ["tree", "inspect", "find-elements", "focus", "invoke", "set-value"],
-        ["click", "keys", "key-sequence", "move", "pointer-click", "scroll"],
+        ["click", "keys", "key-sequence", "move", "pointer-click", "scroll", "drag"],
         ["list", "state", "activate", "close", "screenshot"],
         new(InputLimits.MaxLocatorDepth, InputLimits.MaxLocatorNodes, InputLimits.MaxLocatorTextLength,
             InputLimits.MaxFindResults, InputLimits.MaxKeySequence, InputLimits.MaxVirtualKey,
             InputLimits.MaxWheelDelta, InputLimits.MaxTextLength, InputLimits.MaxValueLength,
-            InputLimits.MaxDepth, InputLimits.MaxNodes, 2));
+            InputLimits.MaxDepth, InputLimits.MaxNodes, 2,
+            InputLimits.MaxDragPoints, InputLimits.MaxDragDurationMs, InputLimits.MaxDragSteps));
 }
 public sealed record ActionResponse(bool Success);
 public sealed record ElementLocator(string? AutomationId = null, string? Name = null, string? ControlType = null, ElementLocator? Ancestor = null);
@@ -76,6 +83,19 @@ public static class InputLimits
     public const int MaxKeySequence = 32;
     public const int MaxVirtualKey = 254;
     public const int MaxWheelDelta = 1200;
+    public const int MaxDragPoints = 128;
+    public const int MaxDragDurationMs = 5000;
+    // Includes the initial pointer move; button events do not consume this budget.
+    public const int MaxDragSteps = 512;
+
+    public static bool ValidDrag(DragRequest? request) => request?.Points is
+        { Length: >= 2 and <= MaxDragPoints } points && points.All(point => point is not null) &&
+        request.DurationMs is >= 0 and <= MaxDragDurationMs &&
+        (request.StepsPerSegment is null || request.StepsPerSegment is >= 1 and < MaxDragSteps &&
+            1L + (points.Length - 1L) * request.StepsPerSegment.Value <= MaxDragSteps);
+
+    internal static int DragStepsPerSegment(DragRequest request) => request.StepsPerSegment ??
+        Math.Min(16, (MaxDragSteps - 1) / (request.Points!.Length - 1));
 
     public static bool ValidSequence(KeySequenceRequest? request) => request?.Chords is
         { Length: >= 1 and <= MaxKeySequence } chords && chords.All(chord => chord is not null &&

@@ -11,18 +11,46 @@ internal static class NativeInput
         ClickButton("left", 1);
     }
 
-    public static void Move(int x, int y)
+    public static void Move(int x, int y) => Move(x, y, false);
+
+    private static void Move(int x, int y, bool noCoalesce)
     {
         var left = Native.GetSystemMetrics(76);
         var top = Native.GetSystemMetrics(77);
         var width = Native.GetSystemMetrics(78);
         var height = Native.GetSystemMetrics(79);
+        var (dx, dy) = AbsoluteCoordinates(x, y, left, top, width, height);
+        // Drag vertices must survive WM_MOUSEMOVE coalescing, including immediate strokes.
+        // Existing move/click/scroll retain their original flags.
+        Send([Mouse(0x8000 | 0x4000 | 0x0001 | (noCoalesce ? 0x2000u : 0u), 0, dx, dy)]);
+    }
+
+    internal static (int X, int Y) AbsoluteCoordinates(int x, int y, int left, int top, int width, int height)
+    {
         if (width < 2 || height < 2 || x < left || y < top ||
             (long)x >= (long)left + width || (long)y >= (long)top + height)
             throw new AutomationException("invalid_coordinates", "Click must be within the virtual desktop.", 400);
         var dx = (int)(((long)x - left) * 65535 / (width - 1));
         var dy = (int)(((long)y - top) * 65535 / (height - 1));
-        Send([Mouse(0x8000 | 0x4000 | 0x0001, 0, dx, dy)]);
+        return (dx, dy);
+    }
+
+    public static DragResponse Drag(DragRequest? request)
+    {
+        var points = DragGesture.Interpolate(request);
+        var drag = request!;
+        var left = Native.GetSystemMetrics(76);
+        var top = Native.GetSystemMetrics(77);
+        var width = Native.GetSystemMetrics(78);
+        var height = Native.GetSystemMetrics(79);
+        // Reject an off-desktop path before pressing. Move still rechecks the desktop
+        // in case display configuration changes during the gesture.
+        foreach (var point in drag.Points!)
+            AbsoluteCoordinates(point.X, point.Y, left, top, width, height);
+        var metadata = DragGesture.Execute(points, drag.DurationMs,
+            point => Move(point.X, point.Y, true),
+            () => Send([Mouse(0x0002)]), () => Send([Mouse(0x0004)]));
+        return new(true, metadata);
     }
 
     public static void PointerClick(PointerClickRequest request)
