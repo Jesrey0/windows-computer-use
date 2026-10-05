@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/WindowsComputerUse.Core/WindowsComputerUse.Core.csproj" />
+  <Project Path="src/WindowsComputerUse.Host/WindowsComputerUse.Host.csproj" />
+  <Project Path="src/WindowsComputerUse.Cli/WindowsComputerUse.Cli.csproj" />
+  <Project Path="tests/WindowsComputerUse.Tests/WindowsComputerUse.Tests.csproj" />
+</Solution>
