@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using WindowsComputerUse.Core;
 
@@ -15,6 +16,7 @@ try
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TokenStore.Load());
     var command = args[0];
     string url;
+    object? body = null;
     switch (command)
     {
         case "health" when args.Length == 1:
@@ -25,10 +27,17 @@ try
             url = $"/v1/windows/{args[1]}/tree"; break;
         case "screenshot" when args.Length == 3 && WindowHandle.TryParse(args[1], out _):
             url = $"/v1/windows/{args[1]}/screenshot"; break;
+        case "activate" when args.Length == 2 && WindowHandle.TryParse(args[1], out _):
+            url = $"/v1/windows/{args[1]}/activate"; body = new { }; break;
+        case "inspect" when args.Length == 3 && WindowHandle.TryParse(args[1], out _):
+            url = "/v1/elements/inspect";
+            body = new LocatedElementRequest(args[1], new ElementLocator(args[2], null, null, null));
+            if (!InputLimits.ValidLocator(((LocatedElementRequest)body).Locator)) { Usage(); return 2; }
+            break;
         default:
             Usage(); return 2;
     }
-    using var response = await client.GetAsync(url);
+    using var response = body is null ? await client.GetAsync(url) : await client.PostAsJsonAsync(url, body);
     if (!response.IsSuccessStatusCode)
     {
         Console.Error.WriteLine($"HTTP {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
@@ -55,4 +64,4 @@ catch (Exception error) when (error is HttpRequestException or TaskCanceledExcep
     return 1;
 }
 
-static void Usage() => Console.Error.WriteLine("Usage: wcu health | windows | tree <hex-handle> | screenshot <hex-handle> <new-png-path>");
+static void Usage() => Console.Error.WriteLine("Usage: wcu health | windows | tree <hex-handle> | screenshot <hex-handle> <new-png-path> | activate <hex-handle> | inspect <hex-handle> <automation-id>");

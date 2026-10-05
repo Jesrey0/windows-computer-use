@@ -24,15 +24,51 @@ Do not share bearer tokens, forward the port, or log request headers.
 | Endpoint | Request / response |
 | --- | --- |
 | `GET /v1/windows` | Array of `{handle,processId,title,bounds,executablePath,processName}`. Access-denied process metadata is null. |
+| `POST /v1/windows/{handle}/activate` | No body. Restores if minimized, requests foreground via Win32, and returns `{handle,isForeground:true}` **only** after `GetForegroundWindow` confirms this handle. If a normal background `SetForegroundWindow` is denied, it temporarily joins same-desktop input queues with `AttachThreadInput`, retries, then immediately detaches. If a packaged/UWP-style window still rejects Win32 activation, UIA top-level `SetFocus` is attempted as a compatibility fallback; the foreground handle is still the sole success authority. |
 | `GET /v1/windows/{handle}/tree?depth=3&maxNodes=200` | `{handle,root,nodeCount,truncated}`. Root path `[]`; children use zero-based path segments. `depth` 0–10, `maxNodes` 1–1000. |
 | `GET /v1/windows/{handle}/screenshot` | `image/png` + `X-WCU-Target`, `X-WCU-Width`, `X-WCU-Height` headers. |
 | `GET /v1/desktop/screenshot` | Same PNG and metadata headers for entire virtual desktop. |
 | `POST /v1/actions/invoke` | JSON `{"handle":"0x1234","path":[0,1]}`. InvokePattern only. |
 | `POST /v1/actions/set-value` | JSON `{"handle":"0x1234","path":[0],"value":"text"}`. ValuePattern only, max 4096 UTF-16 units. |
+| `POST /v1/elements/inspect` | JSON `{"handle":"0x1234","locator":{"automationId":"editor","controlType":"Edit"}}`. Returns a fresh `ElementState` (name, value if ValuePattern supported, control type, automation ID, enabled, focused, offscreen, bounds, Invoke/Value support). No full tree returned. |
+| `POST /v1/elements/focus` | Same locator request; direct UIA SetFocus and readback. Returns state only if the selected window is foreground **and** UIA reports that element has keyboard focus. Does not call the activation operation; activate explicitly first. |
+| `POST /v1/actions/invoke-located` | Same locator request; fresh lookup, then InvokePattern. Success acknowledges the pattern call, not its application-specific effect. |
+| `POST /v1/actions/set-value-located` | JSON `{"handle":"0x1234","locator":{"automationId":"editor"},"value":"text"}`; fresh lookup, then ValuePattern. Verify via inspect. |
 | `POST /v1/input/click` | JSON `{"x":100,"y":200}` virtual-screen pixel coordinates; foreground focus is not changed. |
 | `POST /v1/input/keys` | JSON `{"text":"hello"}` (1–256 UTF-16 units, Unicode SendInput) **or** `{"virtualKey":13}` (single VK down/up). |
 
 Handles are hexadecimal (with optional `0x`); window handles can be recycled.
+Semantic locators use one or more **case-sensitive, ordinal, exact** `automationId`,
+`name`, and `controlType` fields (up to 256 UTF-16 units each). An optional
+`ancestor` uses the same fields, must itself uniquely identify one element, and
+scopes matching to its *descendants*; nested ancestors are invalid. Window root
+may be an ancestor. Examples: `{"automationId":"num7Button"}` and
+`{"automationId":"ValidationText","controlType":"Edit","ancestor":
+{"name":"WCU Semantic Validation","controlType":"Window"}}`. No selector
+language, fuzzy matching or hidden element cache. Each inspect/focus/invoke/
+set-value call resolves against the current UIA tree, scans at most 2000 nodes
+to depth 20 per search (shared node budget for scoped searches), and refuses to
+claim uniqueness if a limit is reached. Locators can themselves become stale
+when UI labels/IDs change; client should re-observe or use more stable fields.
+Unavailable provider data aborts semantic lookup rather than returning a false
+no-match or a false unique match.
+
+Locator failures use problem-details `code`: `invalid_locator` (400),
+`locator_not_found` / `locator_ancestor_not_found` (404),
+`locator_ambiguous` / `locator_ancestor_ambiguous` (409),
+`locator_limit_exceeded` / `locator_provider_failed` (422). Activation fails
+with `activation_not_confirmed` (409) when Windows refuses foreground access;
+focus fails with `element_not_focusable` (422), `focus_not_confirmed` (409), or
+`focus_unverifiable` (422) rather than pretending success. `element_state_unavailable`
+(422) and `action_failed` (422) are distinct from `unsupported_pattern` (422)
+on semantic actions. Windows
+foreground rules, desktop/session isolation and UIPI/UAC are not bypassed. The activation helper is limited to standard same-desktop input-thread attachment; failure to attach or foreground still returns `activation_not_confirmed`.
+
+The core does **not** wait for UI transitions. Clients can poll inspect at a
+bounded cadence/deadline and decide which state is sufficient for their task;
+focus/activation success reflects immediately observed state. UIA providers may
+still stall in a native call, so an HTTP timeout is not a Windows provider kill.
+
 Element paths refer to the **current** UIA child ordering, not durable identities:
 inspect a fresh tree immediately before acting, and be prepared for stale paths.
 Unavailable UIA properties use safe fallbacks (`bounds: null`, missing text
@@ -79,3 +115,24 @@ Windows PowerShell may require a process-scoped execution-policy override to
 run local scripts. Use the installed `wcu.cmd` from Windows; WSL network
 forwarding to Windows loopback varies by WSL mode, and is not part of the API
 security boundary. Bind remains Windows loopback only.
+
+## Operator semantic acceptance (after an operator-owned release)
+
+From an interactive Windows PowerShell session, start the *new* installed host,
+open Calculator in Standard mode (this test clears its display and enters 7),
+and run from this repository:
+
+```powershell
+.\scripts\semantic-acceptance.ps1 -ExpectedVersion '0.2.3'  # replace with actual new version
+# For localized Calculator titles, supply its handle from `wcu windows`:
+.\scripts\semantic-acceptance.ps1 -ExpectedVersion '0.2.3' -CalculatorHandle 0x123456
+```
+
+The script uses the per-user token (never prints it), creates and removes a
+disposable WPF edit/button/status window, and verifies scoped locate → fresh
+inspect → activate → focus → ValuePattern/readback → InvokePattern/readback.
+It then verifies Calculator's exact `clearButton`/`num7Button` locators and
+`CalculatorResults` readback without paths. Its polling is bounded and lives
+only in the acceptance client, not the service. Calculator automation IDs can
+vary by Windows release; inspect the live tree if this app-specific assertion
+fails. The existing `scripts/acceptance.ps1` remains for legacy API coverage.

@@ -46,6 +46,8 @@ app.Use(async (context, next) =>
 
 app.MapGet("/health", () => new HealthResponse("ok", typeof(WindowsAutomation).Assembly.GetName().Version?.ToString() ?? "unknown"));
 app.MapGet("/v1/windows", (WindowsAutomation automation) => automation.Windows());
+app.MapPost("/v1/windows/{handle}/activate", (string handle, WindowsAutomation automation) =>
+    automation.Activate(ParseHandle(handle)));
 app.MapGet("/v1/windows/{handle}/tree", (string handle, int? depth, int? maxNodes, WindowsAutomation automation) =>
 {
     if (!InputLimits.ValidTree(depth ?? 3, maxNodes ?? 200) || !WindowHandle.TryParse(handle, out var hwnd))
@@ -73,6 +75,25 @@ app.MapPost("/v1/actions/set-value", (SetValueRequest? request, WindowsAutomatio
     automation.SetValue(hwnd, request.Path, request.Value);
     return Results.Ok(new ActionResponse(true));
 });
+app.MapPost("/v1/elements/inspect", (LocatedElementRequest? request, WindowsAutomation automation) =>
+    automation.Inspect(LocatedHandle(request), request!.Locator));
+app.MapPost("/v1/elements/focus", (LocatedElementRequest? request, WindowsAutomation automation) =>
+    automation.Focus(LocatedHandle(request), request!.Locator));
+app.MapPost("/v1/actions/invoke-located", (LocatedElementRequest? request, WindowsAutomation automation) =>
+{
+    automation.InvokeLocated(LocatedHandle(request), request!.Locator);
+    return new ActionResponse(true);
+});
+app.MapPost("/v1/actions/set-value-located", (LocatedSetValueRequest? request, WindowsAutomation automation) =>
+{
+    if (request?.Value is null || request.Value.Length > InputLimits.MaxValueLength)
+        throw new AutomationException("invalid_value", "Value must be at most 4096 UTF-16 units.", 400);
+    var handle = ParseHandle(request.Handle);
+    if (!InputLimits.ValidLocator(request.Locator))
+        throw new AutomationException("invalid_locator", "Use one or more nonempty exact fields and at most one ancestor.", 400);
+    automation.SetValueLocated(handle, request.Locator, request.Value);
+    return new ActionResponse(true);
+});
 app.MapPost("/v1/input/click", (ClickRequest request, WindowsAutomation automation) =>
 {
     automation.Click(request.X, request.Y);
@@ -87,6 +108,17 @@ app.MapPost("/v1/input/keys", (KeysRequest? request, WindowsAutomation automatio
 });
 
 app.Run();
+
+static nint ParseHandle(string? text) => WindowHandle.TryParse(text, out var handle)
+    ? handle : throw new AutomationException("invalid_handle", "Invalid window handle.", 400);
+
+static nint LocatedHandle(LocatedElementRequest? request)
+{
+    var handle = ParseHandle(request?.Handle);
+    if (!InputLimits.ValidLocator(request?.Locator))
+        throw new AutomationException("invalid_locator", "Use one or more nonempty exact fields and at most one ancestor.", 400);
+    return handle;
+}
 
 static IResult Png(HttpContext context, ScreenshotResult result)
 {

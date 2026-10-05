@@ -25,6 +25,9 @@ For a versioned Windows install, open Windows PowerShell in the WSL source direc
 & "$env:LOCALAPPDATA\WindowsComputerUse\wcu.cmd" windows
 & "$env:LOCALAPPDATA\WindowsComputerUse\wcu.cmd" tree 0x123456
 & "$env:LOCALAPPDATA\WindowsComputerUse\wcu.cmd" screenshot 0x123456 .\capture.png
+# After a semantic-capable release, diagnostic readback or explicit activation:
+& "$env:LOCALAPPDATA\WindowsComputerUse\wcu.cmd" inspect 0x123456 ValidationText
+& "$env:LOCALAPPDATA\WindowsComputerUse\wcu.cmd" activate 0x123456
 ```
 
 Alternatively build and run the Host and CLI projects with Windows `dotnet` directly;
@@ -36,4 +39,4 @@ uninstall, stop the host then run `scripts/uninstall.ps1` (`-KeepData` retains t
 token and logs). No global install or administrator privileges are needed.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for API, boundaries, lifecycle,
-security, and capture/input limitations.
+security, semantic locators/readback, acceptance checks, and capture/input limitations.

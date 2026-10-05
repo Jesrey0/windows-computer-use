@@ -22,6 +22,13 @@ public sealed record SetValueRequest(string Handle, int[] Path, string Value);
 public sealed record ClickRequest(int X, int Y);
 public sealed record KeysRequest(string? Text, ushort? VirtualKey);
 public sealed record ActionResponse(bool Success);
+public sealed record ElementLocator(string? AutomationId = null, string? Name = null, string? ControlType = null, ElementLocator? Ancestor = null);
+public sealed record LocatedElementRequest(string Handle, ElementLocator Locator);
+public sealed record LocatedSetValueRequest(string Handle, ElementLocator Locator, string Value);
+public sealed record ActivationResponse(string Handle, bool IsForeground);
+public sealed record ElementState(string Handle, string? Name, string? Value, string ControlType,
+    string? AutomationId, bool Enabled, bool Focused, bool Offscreen, RectDto Bounds,
+    bool CanInvoke, bool CanSetValue);
 
 public static class InputLimits
 {
@@ -30,6 +37,9 @@ public static class InputLimits
     public const int MaxPath = 10;
     public const int MaxValueLength = 4096;
     public const int MaxTextLength = 256;
+    public const int MaxLocatorDepth = 20;
+    public const int MaxLocatorNodes = 2000;
+    public const int MaxLocatorTextLength = 256;
 
     public static bool ValidTree(int depth, int maxNodes) =>
         depth is >= 0 and <= MaxDepth && maxNodes is >= 1 and <= MaxNodes;
@@ -40,6 +50,18 @@ public static class InputLimits
     public static bool ValidKeys(KeysRequest? request) => request is not null &&
         (request.Text is { Length: > 0 and <= MaxTextLength } && request.VirtualKey is null ||
          request.Text is null && request.VirtualKey is > 0);
+
+    public static bool ValidLocator(ElementLocator? locator) => locator is not null &&
+        ValidCriteria(locator) && (locator.Ancestor is null ||
+                                    locator.Ancestor.Ancestor is null && ValidCriteria(locator.Ancestor));
+
+    private static bool ValidCriteria(ElementLocator locator)
+    {
+        static bool ValidField(string? value) => value is null ||
+            value.Length <= MaxLocatorTextLength && !string.IsNullOrWhiteSpace(value);
+        return (locator.AutomationId is not null || locator.Name is not null || locator.ControlType is not null) &&
+            ValidField(locator.AutomationId) && ValidField(locator.Name) && ValidField(locator.ControlType);
+    }
 }
 
 public static class WindowHandle

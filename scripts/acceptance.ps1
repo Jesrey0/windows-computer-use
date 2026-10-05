@@ -1,5 +1,5 @@
 param(
-    [string]$ExpectedVersion = '0.1.1',
+    [string]$ExpectedVersion = '0.2.3',
     [switch]$KeepArtifacts
 )
 $ErrorActionPreference = 'Stop'

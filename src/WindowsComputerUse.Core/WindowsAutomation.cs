@@ -6,7 +6,7 @@ using FlaUI.UIA3;
 
 namespace WindowsComputerUse.Core;
 
-public sealed class WindowsAutomation
+public sealed partial class WindowsAutomation
 {
     public IReadOnlyList<WindowDto> Windows()
     {
@@ -87,19 +87,13 @@ public sealed class WindowsAutomation
     public void Invoke(nint handle, int[] path)
     {
         using var automation = new UIA3Automation();
-        var element = Resolve(automation, handle, path);
-        if (!element.Patterns.Invoke.IsSupported)
-            throw new AutomationException("unsupported_pattern", "The element does not support InvokePattern.");
-        element.Patterns.Invoke.Pattern.Invoke();
+        InvokeElement(Resolve(automation, handle, path));
     }
 
     public void SetValue(nint handle, int[] path, string value)
     {
         using var automation = new UIA3Automation();
-        var element = Resolve(automation, handle, path);
-        if (!element.Patterns.Value.IsSupported)
-            throw new AutomationException("unsupported_pattern", "The element does not support ValuePattern.");
-        element.Patterns.Value.Pattern.SetValue(value);
+        SetValueElement(Resolve(automation, handle, path), value);
     }
 
     private static AutomationElement Resolve(UIA3Automation automation, nint handle, int[] path)
@@ -138,6 +132,14 @@ internal static class Native
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool IsWindowVisible(nint handle);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool IsWindow(nint handle);
     [DllImport("user32.dll")] internal static extern nint GetAncestor(nint handle, uint flags);
+    [DllImport("user32.dll")] internal static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool SetForegroundWindow(nint handle);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool BringWindowToTop(nint handle);
+    [DllImport("user32.dll")] internal static extern nint SetActiveWindow(nint handle);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool AttachThreadInput(uint attach, uint attachTo, [MarshalAs(UnmanagedType.Bool)] bool attachState);
+    [DllImport("kernel32.dll")] internal static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool IsIconic(nint handle);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool ShowWindow(nint handle, int command);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetWindowRect(nint handle, out Rect rect);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetWindowText(nint handle, StringBuilder text, int max);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetWindowTextLength(nint handle);
