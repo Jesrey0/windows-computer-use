@@ -1,0 +1,18 @@
+{
+  "benchmark": "Paint v2",
+  "artifact": "Aurora Relay",
+  "date": "2026-10-06",
+  "wcuVersion": "0.4.0",
+  "hostPlane": {
+    "name": "OpenCode Connect",
+    "version": "0.7.0",
+    "build": "434a7f64ab3d3018"
+  },
+  "canvas": {"width": 1152, "height": 648},
+  "mcpSequenceCalls": 5,
+  "sequenceSteps": 35,
+  "dragGestures": 24,
+  "hostPlaneSequenceElapsedMs": 8349.12246900011,
+  "wcuDragElapsedMs": 8005.5169,
+  "sha256": "b007e9504162a080955b0d13849621694c504ab208dd016d14c6d3f03f2c9232"
+}
