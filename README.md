@@ -49,3 +49,7 @@ token and logs). No global install or administrator privileges are needed.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for API, boundaries, lifecycle,
 security, semantic locators/readback, acceptance checks, and capture/input limitations.
+
+See the [computer-use session review](docs/COMPUTER_USE_REVIEW_2026-10-06.md) for
+observed edge cases and confirmed gaps, and the [next sprint](docs/NEXT_SPRINT.md)
+for prioritized follow-up work and acceptance checks.
